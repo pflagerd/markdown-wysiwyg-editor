@@ -2,6 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <!-- Content-Security-Policy: script-src 'self' blocks inline <script>, onerror=, javascript: etc.
+       'unsafe-inline' in style-src is required by KaTeX (rendered output uses inline style="" attrs,
+       and the editor sets element.style directly). img-src allows external/embedded markdown images. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: https:; connect-src 'self'; object-src 'none'; base-uri 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#1b1f24">
   <meta name="description" content="A WYSIWYG markdown editor with KaTeX, offline PWA.">

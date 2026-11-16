@@ -60,6 +60,10 @@ const server = http.createServer((req, res) => {
   } catch (_) {
     return send(res, 400, 'Bad Request');
   }
+  // Reject NUL bytes: fs.stat throws synchronously on a path containing '\x00'.
+  if (pathname.indexOf('\x00') !== -1) {
+    return send(res, 400, 'Bad Request');
+  }
   if (pathname.endsWith('/')) pathname += 'index.html';
 
   // Resolve within ROOT and reject traversal attempts.

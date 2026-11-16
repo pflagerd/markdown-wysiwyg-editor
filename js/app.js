@@ -69,7 +69,9 @@
       setStatus(auto.name ? `Restored unsaved work in ${auto.name}` : 'Restored unsaved work');
     } else {
       editor.setDoc(DEFAULT_DOC, { resetHistory: true });
-      savedText = DEFAULT_DOC;
+      // Compare against the normalized doc (what getDoc returns), not the raw
+      // DEFAULT_DOC, so a fresh load isn't flagged dirty.
+      savedText = editor.getDoc();
       setFileName(null);
     }
     markDirty();

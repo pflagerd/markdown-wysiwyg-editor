@@ -30,6 +30,20 @@ const Markdown = (() => {
   function esc(s) { return String(s).replace(/[&<>"']/g, c => ESC[c]); }
   function escAttr(s) { return String(s).replace(/[&<>"']/g, c => ESC[c]); }
 
+  // ---- URL scheme allowlist ----------------------------------------------
+  // Returns the URL if its scheme is safe to put in href/src, else '#'.
+  // Allowed: relative/anchor URLs (no scheme, or starting / # . ?), and the
+  // http:, https:, mailto: schemes. For images, data:image/ is also allowed.
+  // Rejects javascript:, vbscript:, non-image data:, etc.
+  function safeUrl(url, isImage) {
+    const u = String(url).trim();
+    // relative, root-relative, anchor, query, or anything without a scheme
+    if (/^[/#.?]/.test(u) || !/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(u)) return u;
+    if (/^(https?|mailto):/i.test(u)) return u;
+    if (isImage && /^data:image\//i.test(u)) return u;
+    return '#';
+  }
+
   // ---- block segmentation -------------------------------------------------
   // Splits a document into top-level editable blocks. A "block" is a unit the
   // hybrid editor reveals as raw markdown all at once (a whole list, table,
@@ -172,10 +186,15 @@ const Markdown = (() => {
         const start = i; i++;
         while (i < lines.length && !isBlank(lines[i]) &&
                !/^\s{0,3}(#{1,6}\s|>|```|~~~|\$\$)/.test(lines[i]) &&
-               !isListMarker(lines[i]) &&
-               !/^\s{0,3}([-*_])(\s*\1){2,}\s*$/.test(lines[i])) {
-          // setext heading underline terminates+belongs to paragraph
+               !isListMarker(lines[i])) {
+          // A setext underline (=+ or -+ only) following paragraph text is
+          // consumed into the block and ends it, so renderParagraph turns it
+          // into <h1>/<h2>. Checked BEFORE the thematic-break test so a '---'
+          // underline isn't mistaken for an <hr> (a standalone '---' with no
+          // preceding paragraph line is caught by the earlier hr block).
           if (/^\s{0,3}(=+|-+)\s*$/.test(lines[i])) { i++; break; }
+          // any other thematic break (e.g. *** or ___) ends the paragraph
+          if (/^\s{0,3}([-*_])(\s*\1){2,}\s*$/.test(lines[i])) break;
           i++;
         }
         blocks.push({ type: 'paragraph', raw: lines.slice(start, i).join('\n') });
@@ -453,30 +472,40 @@ const Markdown = (() => {
     s = s.replace(/<((?:https?|mailto):[^\s<>]+)>/g, (_, url) =>
       keep(`<a href="${escAttr(url)}">${esc(url.replace(/^mailto:/, ''))}</a>`));
 
-    // 5. escape everything else
-    s = esc(s);
+    // Images and links are processed on the RAW (unescaped) string, BEFORE the
+    // global esc() below, so attribute values (src/href/title) are escaped
+    // exactly once (e.g. a '&' in a URL becomes '&amp;', not '&amp;amp;').
 
-    // 6. images  ![alt](url "title")
+    // 5. images  ![alt](url "title")
+    // Image alt text has no inner markdown, so the whole image is stored as one
+    // opaque keep() placeholder with attributes escaped once.
     s = s.replace(/!\[([^\]]*)\]\(\s*<?([^\s)]*?)>?(?:\s+["']([^"']*)["'])?\s*\)/g,
       (_, alt, url, title) =>
-        `<img src="${escAttr(url)}" alt="${escAttr(alt)}"${title ? ` title="${escAttr(title)}"` : ''}>`);
+        keep(`<img src="${escAttr(safeUrl(url, true))}" alt="${escAttr(alt)}"${title ? ` title="${escAttr(title)}"` : ''}>`));
 
-    // 7. inline links  [text](url "title")
+    // 6. inline links  [text](url "title")
+    // Link text CAN contain inner markdown (e.g. [**bold**](url)), so the link
+    // is NOT made opaque: emit the opening <a ...> and closing </a> as two
+    // keep() placeholders (their sentinels survive esc + emphasis and restore
+    // at the end) while the text stays in the stream to be escaped/emphasized.
     s = s.replace(/\[([^\]]*)\]\(\s*<?([^\s)]*?)>?(?:\s+["']([^"']*)["'])?\s*\)/g,
       (_, txt, url, title) =>
-        `<a href="${escAttr(url)}"${title ? ` title="${escAttr(title)}"` : ''}>${txt}</a>`);
+        keep(`<a href="${escAttr(safeUrl(url, false))}"${title ? ` title="${escAttr(title)}"` : ''}>`) + txt + keep('</a>'));
 
-    // 8. reference links  [text][id]  and  [id]
+    // 7. reference links  [text][id]  and shortcut  [id]  — same sentinel scheme.
     s = s.replace(/\[([^\]]+)\]\[([^\]]*)\]/g, (whole, txt, id) => {
       const ref = ctx.linkrefs[(id || txt).toLowerCase()];
       if (!ref) return whole;
-      return `<a href="${escAttr(ref.url)}"${ref.title ? ` title="${escAttr(ref.title)}"` : ''}>${txt}</a>`;
+      return keep(`<a href="${escAttr(safeUrl(ref.url, false))}"${ref.title ? ` title="${escAttr(ref.title)}"` : ''}>`) + txt + keep('</a>');
     });
     s = s.replace(/\[([^\]^]+)\](?!\()/g, (whole, txt) => {
       const ref = ctx.linkrefs[txt.toLowerCase()];
       if (!ref) return whole;
-      return `<a href="${escAttr(ref.url)}"${ref.title ? ` title="${escAttr(ref.title)}"` : ''}>${txt}</a>`;
+      return keep(`<a href="${escAttr(safeUrl(ref.url, false))}"${ref.title ? ` title="${escAttr(ref.title)}"` : ''}>`) + txt + keep('</a>');
     });
+
+    // 8. escape everything else (link/image text still in the stream gets escaped here)
+    s = esc(s);
 
     // 9. footnote references [^id]
     s = s.replace(/\[\^([^\]]+)\]/g, (whole, id) => {
@@ -486,9 +515,11 @@ const Markdown = (() => {
       return `<sup class="fn-ref" id="fnref-${escAttr(id)}"><a href="#fn-${escAttr(id)}">${n}</a></sup>`;
     });
 
-    // 10. bare autolinks (http/https/www)
+    // 10. bare autolinks (http/https/www). This runs after esc(), so `url` is
+    // already HTML-escaped (escaped once) and is safe to drop into both the
+    // href attribute and the link text without re-escaping.
     s = s.replace(/(^|[\s(])((?:https?:\/\/|www\.)[^\s<)]+[^\s<).,;:!?])/g,
-      (_, pre, url) => `${pre}<a href="${escAttr(url.startsWith('www.') ? 'http://' + url : url)}">${esc(url)}</a>`);
+      (_, pre, url) => `${pre}<a href="${url.startsWith('www.') ? 'http://' + url : url}">${url}</a>`);
 
     // 11. emphasis: strong, em, strike (order matters)
     s = s.replace(/\*\*\*([^\s](?:[\s\S]*?[^\s])?)\*\*\*/g, '<strong><em>$1</em></strong>');

@@ -35,11 +35,12 @@ with **KaTeX** math support.
 
 ## Running
 
-It's fully static — serve the folder over HTTP (a service worker needs an origin):
+It's fully static — serve the folder over HTTP (a service worker needs an origin).
+A zero-dependency Node server is included:
 
 ```bash
-python3 -m http.server 8000
-# then open http://localhost:8000/
+node server.js        # serves ./ on http://localhost:8000
+node server.js 3000   # custom port
 ```
 
 Then use the browser's install button to install it as an app.
@@ -59,6 +60,7 @@ js/files.js             File System Access + fallback + IndexedDB autosave
 js/app.js               bootstrap, shortcuts, file ops, theme, PWA
 vendor/katex/           vendored KaTeX (JS + CSS + woff2 fonts)
 icons/                  app icons (SVG + PNG)
+server.js               zero-dependency Node static dev server
 ```
 
 ## Tests

@@ -1,0 +1,17 @@
+{
+  "name": "md-wysiwyg-editor",
+  "version": "1.0.0",
+  "description": "A WYSIWYG markdown editor built with **plain HTML / CSS / JavaScript / SVG** — no framework, no build step. Installable as a **PWA** and works **fully offline**, with **KaTeX** math support.",
+  "main": "server.js",
+  "scripts": {
+    "test": "playwright test",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@playwright/test": "^1.65.1"
+  }
+}
